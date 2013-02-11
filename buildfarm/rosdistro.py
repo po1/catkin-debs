@@ -6,7 +6,7 @@ from __future__ import print_function
 import sys
 import yaml, urllib2
 
-URL_PROTOTYPE="https://raw.github.com/ros/rosdistro/master/releases/%s.yaml"
+MAIN_ROSDISTRO="https://raw.github.com/ros/rosdistro/master"
 
 class RepoMetadata(object):
     def __init__(self, name, url, version, packages = {}, status = None):
@@ -41,18 +41,17 @@ def undebianize_package_name(rosdistro, name):
 
 # todo raise not exit
 class Rosdistro:
-    def __init__(self, rosdistro_name, rosdist_rep=None):
+    def __init__(self, rosdistro_name, rosdist_rep=MAIN_ROSDISTRO):
         self._rosdistro = rosdistro_name
         self._targets = None
-        if rosdist_rep is not None:
-            self.url_proto = "%s/releases/%%s.yaml" % rosdist_rep
-        else:
-            self.url_proto = URL_PROTOTYPE
+        self._arches = None
+        self._rosdist_rep = rosdist_rep
         # avaliable for backwards compatability
+        url = get_rosdistro_url(rosdistro_name, rosdist_rep)
         try:
-            self.repo_map = yaml.load(urllib2.urlopen(self.url_proto % rosdistro_name))
+            self.repo_map = yaml.load(urllib2.urlopen(url))
         except urllib2.HTTPError as ex:
-            print ("Loading distro from '%s'failed with HTTPError %s" % (self.url_proto % rosdistro_name, ex), file=sys.stderr)
+            print ("Loading distro from '%s'failed with HTTPError %s" % (url, ex), file=sys.stderr)
             raise
         if 'release-name' not in self.repo_map:
             print("No 'release-name' key in yaml file")
@@ -126,8 +125,14 @@ class Rosdistro:
 
     def get_target_distros(self):
         if self._targets is None: # Different than empty list
-            self._targets = get_target_distros(self._rosdistro, self.url_proto)
+            self._targets = get_target_distros(self._rosdistro, self._rosdist_rep)
         return self._targets
+
+    def get_target_arches(self, distro):
+        if self._arches is None: # Different than empty list
+            self._arches = dict([(d, get_target_arches(self._rosdistro, d, self._rosdist_rep))
+                                 for d in self.get_target_distros()])
+        return self._arches[distro]
 
     def get_default_target(self):
         if self._targets is None:
@@ -163,12 +168,27 @@ class Rosdistro:
         return rosinstall_data
 
 
-
-def get_target_distros(rosdistro, url_proto=URL_PROTOTYPE):
-    print("Fetching " + url_proto%'targets')
-    targets_map = yaml.load(urllib2.urlopen(url_proto%'targets'))
-    my_targets = [x for x in targets_map if rosdistro in x]
-    if len(my_targets) != 1:
-        print("Must have exactly one entry for rosdistro %s in targets.yaml"%(rosdistro))
+def get_rosdistro_url(rosdistro, rosdist_rep=MAIN_ROSDISTRO):
+    try:
+        distros_map = yaml.load(urllib2.urlopen('%s/rosdistros.yaml'%rosdist_rep))
+    except urllib2.URLError:
+        print("Cannot open %s/rosdistros.yaml" % rosdist_rep)
         sys.exit(1)
-    return my_targets[0][rosdistro]
+    if rosdistro not in distros_map:
+        print("Cannot find ROS distribution %s in %s/rosdistros.yaml" % rosdistro)
+        sys.exit(1)
+    return "%s/%s" % (rosdist_rep, distros_map[rosdistro]['release'])
+
+def get_target_distros(rosdistro, rosdist_rep=MAIN_ROSDISTRO):
+    url = get_rosdistro_url(rosdistro, rosdist_rep)
+    print("Fetching %s" % url)
+    targets_map = yaml.load(urllib2.urlopen(url))
+    targets = [a for a in targets_map['targets']]
+    return targets
+
+def get_target_arches(rosdistro, distro, rosdist_rep=MAIN_ROSDISTRO):
+    url = get_rosdistro_url(rosdistro, rosdist_rep)
+    print("Fetching %s" % url)
+    targets_map = yaml.load(urllib2.urlopen(url))
+    arches = targets_map['targets'][distro]
+    return arches

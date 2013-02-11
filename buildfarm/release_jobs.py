@@ -87,7 +87,10 @@ def compute_missing(distros, arches, fqdn, rosdistro, sourcedeb_only=False, rosd
             if not repo.deb_in_repo(repo_url, deb_name, str(expected_version) + d, d, arch='na', source=True):
                 missing[short_package_name].append('%s_source' % d)
             if not sourcedeb_only:
-                for a in arches:
+                target_arches = rd.get_target_arches(d)
+                if arches:
+                    target_arches = [x for x in target_arches if x in arches]
+                for a in target_arches:
                     if not repo.deb_in_repo(repo_url, deb_name, str(expected_version) + ".*", d, a):
                         missing[short_package_name].append('%s_%s' % (d, a))
 
@@ -98,7 +101,10 @@ def compute_missing(distros, arches, fqdn, rosdistro, sourcedeb_only=False, rosd
 
         distro_arches = []
         for d in target_distros:
-            for a in arches:
+            target_arches = rd.get_target_arches(d)
+            if arches:
+                target_arches = [x for x in target_arches if x in arches]
+            for a in target_arches:
                 distro_arches.append((d, a))
 
         for s in dist.stacks:
@@ -321,13 +327,16 @@ def binarydeb_jobs(job_params, pkg_params):
         NOTIFICATION_EMAIL=' '.join(pkg_params.maintainer_emails),
         USERNAME=jenkins_config.username
     )
+
     jobs = []
 
     target_distros = job_params.rd.get_target_distros()
     if job_params.distros:
         target_distros = [x for x in target_distros if x in job_params.distros]
     for distro in target_distros:
-        target_arches = job_params.arches
+        target_arches = job_params.rd.get_target_arches(distro)
+        if job_params.arches:
+            target_arches = [x for x in target_arches if x in job_params.arches]
         for arch in target_arches:
             if (distro, arch) in DONT_NOTIFY:
                 d['NOTIFICATION_EMAIL'] = []
