@@ -40,13 +40,15 @@ def parse_options():
            help='A directory into which all the repositories will be checked out into.')
     parser.add_argument('--repos', nargs='+',
            help='A list of repository (or stack) names to create. Default: creates all')
+    parser.add_argument('--rosdistro', dest='rosdist_rep', default='https://raw.github.com/ros/rosdistro/master/',
+            help='The base path to a rosdistro repository. Default: %(default)s')
     args = parser.parse_args()
     if args.repos and args.delete:
         parser.error('A set of repos to create can not be combined with the --delete option.')
     return args
 
 
-def doit(job_params, dry_maintainers, packages,
+def doit(job_params, dry_maintainers, packages, rosdist_rep,
          commit = False, delete_extra_jobs = False, whitelist_repos = None):
 
     jenkins_instance = None
@@ -170,7 +172,7 @@ if __name__ == '__main__':
 
     print('Loading rosdistro %s' % args.rosdistro)
 
-    rd = Rosdistro(args.rosdistro)
+    rd = Rosdistro(args.rosdistro, args.rosdist_rep)
 
     workspace = args.repo_workspace
     if not workspace:
@@ -206,12 +208,14 @@ if __name__ == '__main__':
                    arches=args.arches,
                    fqdn=args.fqdn,
                    jobgraph=combined_jobgraph,
+                   rosdist_rep=args.rosdist_rep,
                    rd_object=rd)
 
     results_map = doit(job_params=jp,
                        packages=packages,
                        dry_maintainers=dry_maintainers,
                        commit=args.commit,
+                       rosdist_rep=args.rosdist_rep,
                        delete_extra_jobs=args.delete,
                        whitelist_repos=args.repos)
 

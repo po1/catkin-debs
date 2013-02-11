@@ -24,6 +24,7 @@ def parse_options():
     parser.add_argument('--repo-fqdn', dest='repo_fqdn', help='The fully qualified domain name of the repo machine. Default: %(default)s', default='50.28.27.175')
     parser.add_argument('--repo-path', dest='repo_path', help='The path to find the repo on the machine. Default: %(default)s', default='/var/www/repos/building')
     parser.add_argument('-n', dest='noupload', help='Do not try to upload', action='store_true', default=False)
+    parser.add_argument('--rosdistro', dest='rosdist_rep', help='Where to find rosdistro files. Default: %(default)s', default='http://raw.github.com/ros/rosdistro')
     
     args = parser.parse_args()
 
@@ -107,7 +108,7 @@ if __name__ == "__main__":
     args = parse_options()
     make_working(args.working)
 
-    rd = rosdistro.Rosdistro(args.rosdistro)
+    rd = rosdistro.Rosdistro(args.rosdistro, args.rosdist_rep)
 
     package_version = rd.get_version(args.short_package_name, full_version=True)
     print ("package name", args.short_package_name, "version", package_version)

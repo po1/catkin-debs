@@ -32,16 +32,17 @@ class Templates(object):
 
 # generic release job parameters
 class JobParams(object):
-    def __init__(self, rosdistro, distros, arches, fqdn, jobgraph, rd_object=None):
+    def __init__(self, rosdistro, distros, arches, fqdn, jobgraph, rosdist_rep, rd_object=None):
         self.rosdistro = rosdistro
         self.distros = distros
         self.arches = arches
         self.fqdn = fqdn
         self.jobgraph = jobgraph
+        self.rosdist_rep = rosdist_rep
         if rd_object is not None:
             self.rd = rd_object
         else:
-            self.rd = Rosdistro(rosdistro)
+            self.rd = Rosdistro(rosdistro, rosdist_rep)
 
 
 class PackageParams(object):
@@ -60,12 +61,12 @@ def expand(config_template, d):
     return s
 
 
-def compute_missing(distros, arches, fqdn, rosdistro, sourcedeb_only=False):
+def compute_missing(distros, arches, fqdn, rosdistro, sourcedeb_only=False, rosdist_rep=None):
     """ Compute what packages are missing from a repo based on the rosdistro files, both wet and dry. """
 
     repo_url = 'http://%s/repos/building' % fqdn
 
-    rd = Rosdistro(rosdistro)
+    rd = Rosdistro(rosdistro, rosdist_rep)
     # We take the intersection of repo-specific targets with default
     # targets.
 
@@ -350,7 +351,8 @@ def sourcedeb_job(job_params, pkg_params, child_projects):
         NOTIFICATION_EMAIL=' '.join(pkg_params.maintainer_emails),
         ROSDISTRO=job_params.rosdistro,
         SHORT_PACKAGE_NAME=pkg_params.short_package_name,
-        USERNAME=jenkins_config.username
+        USERNAME=jenkins_config.username,
+        ROSDIST_REP=job_params.rosdist_rep
     )
     return  (sourcedeb_job_name(pkg_params.package_name), create_sourcedeb_config(d))
 

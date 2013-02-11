@@ -41,14 +41,18 @@ def undebianize_package_name(rosdistro, name):
 
 # todo raise not exit
 class Rosdistro:
-    def __init__(self, rosdistro_name):
+    def __init__(self, rosdistro_name, rosdist_rep=None):
         self._rosdistro = rosdistro_name
         self._targets = None
+        if rosdist_rep is not None:
+            self.url_proto = "%s/releases/%%s.yaml" % rosdist_rep
+        else:
+            self.url_proto = URL_PROTOTYPE
         # avaliable for backwards compatability
         try:
-            self.repo_map = yaml.load(urllib2.urlopen(URL_PROTOTYPE % rosdistro_name))
+            self.repo_map = yaml.load(urllib2.urlopen(self.url_proto % rosdistro_name))
         except urllib2.HTTPError as ex:
-            print ("Loading distro from '%s'failed with HTTPError %s" % (URL_PROTOTYPE % rosdistro_name, ex), file=sys.stderr)
+            print ("Loading distro from '%s'failed with HTTPError %s" % (self.url_proto % rosdistro_name, ex), file=sys.stderr)
             raise
         if 'release-name' not in self.repo_map:
             print("No 'release-name' key in yaml file")
@@ -122,7 +126,7 @@ class Rosdistro:
 
     def get_target_distros(self):
         if self._targets is None: # Different than empty list
-            self._targets = get_target_distros(self._rosdistro)
+            self._targets = get_target_distros(self._rosdistro, self.url_proto)
         return self._targets
 
     def get_default_target(self):
@@ -157,12 +161,12 @@ class Rosdistro:
     def compute_rosinstall_distro(self, rosdistro, distro_name):
         rosinstall_data = [self.compute_rosinstall_snippet(name, r['url'], r['version'], rosdistro) for name, r in self.repo_map['repositories'].items() if 'url' in r and 'version' in r]
         return rosinstall_data
-        
 
 
-def get_target_distros(rosdistro):
-    print("Fetching " + URL_PROTOTYPE%'targets')
-    targets_map = yaml.load(urllib2.urlopen(URL_PROTOTYPE%'targets'))
+
+def get_target_distros(rosdistro, url_proto=URL_PROTOTYPE):
+    print("Fetching " + url_proto%'targets')
+    targets_map = yaml.load(urllib2.urlopen(url_proto%'targets'))
     my_targets = [x for x in targets_map if rosdistro in x]
     if len(my_targets) != 1:
         print("Must have exactly one entry for rosdistro %s in targets.yaml"%(rosdistro))

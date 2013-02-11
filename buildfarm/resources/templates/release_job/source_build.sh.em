@@ -4,6 +4,7 @@ FQDN=@(FQDN)
 PACKAGE=@(PACKAGE)
 ROSDISTRO=@(ROSDISTRO)
 SHORT_PACKAGE_NAME=@(SHORT_PACKAGE_NAME)
+ROSDIST_REP=@(ROSDIST_REP)
 
 sudo apt-get install -y git-buildpackage dput debhelper
 
@@ -24,4 +25,4 @@ cd $WORKSPACE/catkin-debs
 rm -rf $WORKSPACE/output
 rm -rf $WORKSPACE/workspace
 
-$WORKSPACE/catkin-debs/scripts/generate_sourcedeb $RELEASE_URI $PACKAGE $ROSDISTRO $SHORT_PACKAGE_NAME --working $WORKSPACE/workspace --output $WORKSPACE/output --repo-fqdn $FQDN 
+$WORKSPACE/catkin-debs/scripts/generate_sourcedeb $RELEASE_URI $PACKAGE $ROSDISTRO $SHORT_PACKAGE_NAME --rosdistro $ROSDIST_REP --working $WORKSPACE/workspace --output $WORKSPACE/output --repo-fqdn $FQDN
