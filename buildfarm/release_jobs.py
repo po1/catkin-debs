@@ -307,6 +307,10 @@ def dry_binarydeb_jobs(stackname, dry_maintainers, rosdistro, distros, arches, f
     return jobs
 
 
+#XXX: these distributions are experimental, so don't notify
+#     maintainers about it. Quick fix.
+DONT_NOTIFY = [('precise', 'armel'), ('wheezy', 'armhf')]
+
 def binarydeb_jobs(job_params, pkg_params):
 
     jenkins_config = jenkins_support.load_server_config_file(jenkins_support.get_default_catkin_debs_config())
@@ -325,6 +329,8 @@ def binarydeb_jobs(job_params, pkg_params):
     for distro in target_distros:
         target_arches = job_params.arches
         for arch in target_arches:
+            if (distro, arch) in DONT_NOTIFY:
+                d['NOTIFICATION_EMAIL'] = []
             d['ARCH'] = arch
             d['DISTRO'] = distro
             d["CHILD_PROJECTS"] = calc_child_jobs(pkg_params.package_name, distro, arch, job_params.jobgraph)
