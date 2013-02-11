@@ -11,9 +11,7 @@ from buildfarm import jenkins_support, release_jobs
 import rospkg.distro
 
 from buildfarm.rosdistro import Rosdistro, debianize_package_name
-
-URL_PROTOTYPE = 'https://raw.github.com/ros/rosdistro/master/releases/%s.yaml'
-
+from buildfarm.release_jobs import JobParams, PackageParams
 
 def parse_options():
     parser = argparse.ArgumentParser(
@@ -48,10 +46,18 @@ def parse_options():
     return args
 
 
-def doit(rd, distros, arches, fqdn, jobs_graph, rosdistro, packages, dry_maintainers, commit=False, delete_extra_jobs=False, whitelist_repos=None):
+def doit(job_params, dry_maintainers, packages,
+         commit = False, delete_extra_jobs = False, whitelist_repos = None):
+
     jenkins_instance = None
-    if args.commit or delete_extra_jobs:
-        jenkins_instance = jenkins_support.JenkinsConfig_to_handle(jenkins_support.load_server_config_file(jenkins_support.get_default_catkin_debs_config()))
+    if commit or delete_extra_jobs:
+        jenkins_config = jenkins_support.load_server_config_file(jenkins_support.get_default_catkin_debs_config())
+        jenkins_instance = jenkins_support.JenkinsConfig_to_handle(jenkins_config)
+
+    rosdistro = job_params.rosdistro
+    distros = job_params.distros
+
+    rd = job_params.rd
 
     # Figure out default distros.  Command-line arg takes precedence; if
     # it's not specified, then read targets.yaml.
@@ -61,7 +67,7 @@ def doit(rd, distros, arches, fqdn, jobs_graph, rosdistro, packages, dry_maintai
         default_distros = rd.get_target_distros()
 
     # TODO: pull raches from rosdistro
-    target_arches = arches
+    target_arches = job_params.arches
 
     # We take the intersection of repo-specific targets with default
     # targets.
@@ -85,17 +91,15 @@ def doit(rd, distros, arches, fqdn, jobs_graph, rosdistro, packages, dry_maintai
                 print('- skipping "%s" since version is null' % p)
                 continue
             pkg_name = rd.debianize_package_name(p)
-            results[pkg_name] = release_jobs.doit(r.url,
-                 pkg_name,
-                 packages[p],
-                 target_distros,
-                 target_arches,
-                 fqdn,
-                 jobs_graph,
-                 rosdistro=rosdistro,
-                 short_package_name=p,
-                 commit=commit,
-                 jenkins_instance=jenkins_instance)
+            pp = PackageParams(package_name=pkg_name,
+                               package=packages[p],
+                               release_uri=r.url,
+                               short_package_name=p)
+
+            results[pkg_name] = release_jobs.doit(job_params=job_params,
+                                                  pkg_params=pp,
+                                                  commit=commit,
+                                                  jenkins_instance=jenkins_instance)
             #time.sleep(1)
             #print ('individual results', results[pkg_name])
 
@@ -119,6 +123,8 @@ def doit(rd, distros, arches, fqdn, jobs_graph, rosdistro, packages, dry_maintai
     #dry stacks
     # dry dependencies
     d = rospkg.distro.load_distro(rospkg.distro.distro_uri(rosdistro))
+
+    jobs_graph = job_params.jobgraph
 
     for s in sorted(d.stacks.iterkeys()):
         if whitelist_repos and s not in whitelist_repos:
@@ -195,18 +201,19 @@ if __name__ == '__main__':
     # setup a job triggered by all other debjobs
     combined_jobgraph[debianize_package_name(args.rosdistro, 'metapackages')] = combined_jobgraph.keys()
 
-    results_map = doit(
-        rd,
-        args.distros,
-        args.arches,
-        args.fqdn,
-        combined_jobgraph,
-        rosdistro=args.rosdistro,
-        packages=packages,
-        dry_maintainers=dry_maintainers,
-        commit=args.commit,
-        delete_extra_jobs=args.delete,
-        whitelist_repos=args.repos)
+    jp = JobParams(rosdistro=args.rosdistro,
+                   distros=args.distros,
+                   arches=args.arches,
+                   fqdn=args.fqdn,
+                   jobgraph=combined_jobgraph,
+                   rd_object=rd)
+
+    results_map = doit(job_params=jp,
+                       packages=packages,
+                       dry_maintainers=dry_maintainers,
+                       commit=args.commit,
+                       delete_extra_jobs=args.delete,
+                       whitelist_repos=args.repos)
 
     if not args.commit:
         print('This was not pushed to the server.  If you want to do so use "--commit" to do it for real.')

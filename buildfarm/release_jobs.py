@@ -30,6 +30,30 @@ class Templates(object):
     config_dry_binarydeb = pkg_resources.resource_string('buildfarm', 'resources/templates/dry_release/config.xml.em')  # A config.xml template for something that runs a shell script
     command_dry_binarydeb = pkg_resources.resource_string('buildfarm', 'resources/templates/dry_release/build.sh.em')  # A config.xml template for something that runs a shell script
 
+# generic release job parameters
+class JobParams(object):
+    def __init__(self, rosdistro, distros, arches, fqdn, jobgraph, rd_object=None):
+        self.rosdistro = rosdistro
+        self.distros = distros
+        self.arches = arches
+        self.fqdn = fqdn
+        self.jobgraph = jobgraph
+        if rd_object is not None:
+            self.rd = rd_object
+        else:
+            self.rd = Rosdistro(rosdistro)
+
+
+class PackageParams(object):
+    def __init__(self, package_name, package, release_uri,
+                 short_package_name, maintainers = []):
+        self.package_name = package_name
+        self.package = package
+        self.release_uri = release_uri
+        self.short_package_name = short_package_name
+        self.maintainers = maintainers
+        self.maintainer_emails = [x.email for x in package.maintainers]
+
 
 def expand(config_template, d):
     s = em.expand(config_template, **d)
@@ -45,10 +69,9 @@ def compute_missing(distros, arches, fqdn, rosdistro, sourcedeb_only=False):
     # We take the intersection of repo-specific targets with default
     # targets.
 
+    target_distros = rd.get_target_distros()
     if distros:
-        target_distros = distros
-    else:
-        target_distros = rd.get_target_distros()
+        target_distros = [x for x in target_distros if x in distros]
 
     missing = {}
     for short_package_name in rd.get_package_list():
@@ -283,45 +306,53 @@ def dry_binarydeb_jobs(stackname, dry_maintainers, rosdistro, distros, arches, f
     return jobs
 
 
-def binarydeb_jobs(package, maintainer_emails, distros, arches, fqdn, jobgraph):
+def binarydeb_jobs(job_params, pkg_params):
+
     jenkins_config = jenkins_support.load_server_config_file(jenkins_support.get_default_catkin_debs_config())
     d = dict(
-        DISTROS=distros,
-        FQDN=fqdn,
-        PACKAGE=package,
-        NOTIFICATION_EMAIL=' '.join(maintainer_emails),
+        DISTROS=job_params.distros,
+        FQDN=job_params.fqdn,
+        PACKAGE=pkg_params.package_name,
+        NOTIFICATION_EMAIL=' '.join(pkg_params.maintainer_emails),
         USERNAME=jenkins_config.username
     )
     jobs = []
-    for distro in distros:
-        for arch in arches:
+
+    target_distros = job_params.rd.get_target_distros()
+    if job_params.distros:
+        target_distros = [x for x in target_distros if x in job_params.distros]
+    for distro in target_distros:
+        target_arches = job_params.arches
+        for arch in target_arches:
             d['ARCH'] = arch
             d['DISTRO'] = distro
-            d["CHILD_PROJECTS"] = calc_child_jobs(package, distro, arch, jobgraph)
-            d["DEPENDENTS"] = add_dependent_to_dict(package, jobgraph)
+            d["CHILD_PROJECTS"] = calc_child_jobs(pkg_params.package_name, distro, arch, job_params.jobgraph)
+            d["DEPENDENTS"] = add_dependent_to_dict(pkg_params.package_name, job_params.jobgraph)
+
             config = create_binarydeb_config(d)
             #print(config)
-            job_name = binarydeb_job_name(package, distro, arch)
+            job_name = binarydeb_job_name(pkg_params.package_name, distro, arch)
             jobs.append((job_name, config))
     return jobs
 
 
-def sourcedeb_job(package, maintainer_emails, distros, fqdn, release_uri, child_projects, rosdistro, short_package_name):
+def sourcedeb_job(job_params, pkg_params, child_projects):
+
     jenkins_config = jenkins_support.load_server_config_file(jenkins_support.get_default_catkin_debs_config())
 
     d = dict(
-        RELEASE_URI=release_uri,
+        RELEASE_URI=pkg_params.release_uri,
         RELEASE_BRANCH='master',
-        FQDN=fqdn,
-        DISTROS=distros,
+        FQDN=job_params.fqdn,
+        DISTROS=job_params.distros,
         CHILD_PROJECTS=child_projects,
-        PACKAGE=package,
-        NOTIFICATION_EMAIL=' '.join(maintainer_emails),
-        ROSDISTRO=rosdistro,
-        SHORT_PACKAGE_NAME=short_package_name,
+        PACKAGE=pkg_params.package_name,
+        NOTIFICATION_EMAIL=' '.join(pkg_params.maintainer_emails),
+        ROSDISTRO=job_params.rosdistro,
+        SHORT_PACKAGE_NAME=pkg_params.short_package_name,
         USERNAME=jenkins_config.username
     )
-    return  (sourcedeb_job_name(package), create_sourcedeb_config(d))
+    return  (sourcedeb_job_name(pkg_params.package_name), create_sourcedeb_config(d))
 
 
 def dry_doit(package, dry_maintainers, distros, arches, fqdn, rosdistro, jobgraph, commit, jenkins_instance, packages_for_sync):
@@ -347,11 +378,11 @@ def dry_doit(package, dry_maintainers, distros, arches, fqdn, rosdistro, jobgrap
     return (unattempted_jobs, successful_jobs, failed_jobs)
 
 
-def doit(release_uri, package_name, package, distros, arches, fqdn, job_graph, rosdistro, short_package_name, commit, jenkins_instance):
-    maintainer_emails = [m.email for m in package.maintainers]
-    binary_jobs = binarydeb_jobs(package_name, maintainer_emails, distros, arches, fqdn, job_graph)
+def doit(job_params, pkg_params, commit, jenkins_instance):
+
+    binary_jobs = binarydeb_jobs(job_params, pkg_params)
     child_projects = zip(*binary_jobs)[0]  # unzip the binary_jobs tuple
-    source_job = sourcedeb_job(package_name, maintainer_emails, distros, fqdn, release_uri, child_projects, rosdistro, short_package_name)
+    source_job = sourcedeb_job(job_params, pkg_params, child_projects)
     jobs = [source_job] + binary_jobs
     successful_jobs = []
     failed_jobs = []
