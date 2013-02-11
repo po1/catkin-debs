@@ -42,10 +42,11 @@ def setup_conf(rootdir, target_dir):
         apt_conf.write(expand_template(template, d))
 
 
-    
-def set_default_sources(rootdir, distro, repo):
+
+def set_default_sources(rootdir, distro, repo, arch):
     """ Set the source lists for the default ubuntu and ros sources """
-    d = {'distro':distro, 
+    d = {'distro':distro,
+         'arch':arch,
          'repo': repo}
     with open(os.path.join(rootdir, "etc/apt/sources.list"), 'w') as sources_list:
         template = pkg_resources.resource_string('buildfarm', 'resources/templates/sources.list.em')
@@ -66,7 +67,7 @@ def setup_apt_rootdir(rootdir, distro, arch, mirror=None, additional_repos = {})
         repo='http://us.archive.ubuntu.com/ubuntu/'
     else:
         repo = mirror
-    set_default_sources(rootdir, distro, repo)
+    set_default_sources(rootdir, distro, repo, arch)
     for repo_name, repo_url in additional_repos.iteritems():
         set_additional_sources(rootdir, distro, repo_url, repo_name)
 

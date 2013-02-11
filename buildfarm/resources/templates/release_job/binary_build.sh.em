@@ -25,7 +25,12 @@ work_dir=$WORKSPACE/work
 
 if [ $arch == armel ] || [ $arch == armhf ]
 then
-    mirror=http://ports.ubuntu.com/ubuntu-ports
+    if [ $distro == wheezy ]
+    then
+        mirror=http://archive.raspbian.org/raspbian
+    else
+        mirror=http://ports.ubuntu.com/ubuntu-ports
+    fi
     debootstrap_type='qemu-debootstrap'
 else
     mirror=http://us.archive.ubuntu.com/ubuntu
