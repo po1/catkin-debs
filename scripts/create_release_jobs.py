@@ -10,8 +10,10 @@ from buildfarm import jenkins_support, release_jobs
 
 import rospkg.distro
 
-from buildfarm.rosdistro import Rosdistro, debianize_package_name
+from buildfarm.release_jobs import get_targets, debianize_package_name
 from buildfarm.release_jobs import JobParams, PackageParams
+from rosdistro.rosdistro import RosDistro
+from rosdep2 import rospack
 
 def parse_options():
     parser = argparse.ArgumentParser(
@@ -49,7 +51,7 @@ def parse_options():
 
 
 def doit(job_params, dry_maintainers, packages, rosdist_rep,
-         commit = False, delete_extra_jobs = False, whitelist_repos = None):
+         wet_only=False, commit = False, delete_extra_jobs = False, whitelist_repos = None):
 
     jenkins_instance = None
     if commit or delete_extra_jobs:
@@ -57,46 +59,32 @@ def doit(job_params, dry_maintainers, packages, rosdist_rep,
         jenkins_instance = jenkins_support.JenkinsConfig_to_handle(jenkins_config)
 
     rosdistro = job_params.rosdistro
-    distros = job_params.distros
-
     rd = job_params.rd
 
-    # Figure out default distros.  Command-line arg takes precedence; if
-    # it's not specified, then read targets.yaml.
-    if distros:
-        default_distros = distros
-    else:
-        default_distros = rd.get_target_distros()
-
-    # TODO: pull raches from rosdistro
-    target_arches = job_params.arches
 
     # We take the intersection of repo-specific targets with default
     # targets.
     results = {}
 
-    for repo_name in sorted(rd.get_repo_list()):
+    for repo_name in sorted(rd.get_repositories()):
         if whitelist_repos and repo_name not in whitelist_repos:
             continue
 
-        r = rd.get_repo(repo_name)
-        #todo add support for specific targets, needed in rosdistro.py too
-        #if 'target' not in r or r['target'] == 'all':
-        target_distros = default_distros
-        #else:
-        #    target_distros = list(set(r['target']) & set(default_distros))
+        r = rd.get_repository(repo_name)
 
-        print ('Configuring WET repo "%s" at "%s" for "%s"' % (r.name, r.url, target_distros))
-
-        for p in sorted(r.packages.iterkeys()):
+        print ('Configuring WET repo "%s" at "%s" for "%s"' % (r.name, r.url, job_params.distros))
+        p_list = [p.name for p in r.packages]
+        for p in sorted(p_list):
             if not r.version:
                 print('- skipping "%s" since version is null' % p)
                 continue
-            pkg_name = rd.debianize_package_name(p)
+            pkg_name = debianize_package_name(rosdistro, p)
+            maintainers = rd.get_maintainers(p)
             pp = PackageParams(package_name=pkg_name,
                                package=packages[p],
                                release_uri=r.url,
-                               short_package_name=p)
+                               short_package_name=p,
+                               maintainers=maintainers)
 
             results[pkg_name] = release_jobs.doit(job_params=job_params,
                                                   pkg_params=pp,
@@ -105,9 +93,14 @@ def doit(job_params, dry_maintainers, packages, rosdist_rep,
             #time.sleep(1)
             #print ('individual results', results[pkg_name])
 
-    if args.wet_only:
+    if wet_only:
         print ("wet only selected, skipping dry and delete")
         return results
+
+    default_distros = job_params.distros
+    target_arches = list(set([x for d in default_distros for x in job_params.arches[d]]))
+    rosdistro = job_params.rosdistro
+    jobs_graph = job_params.jobgraph
 
     if rosdistro == 'backports':
         print ("No dry backports support")
@@ -126,8 +119,6 @@ def doit(job_params, dry_maintainers, packages, rosdist_rep,
     # dry dependencies
     d = rospkg.distro.load_distro(rospkg.distro.distro_uri(rosdistro))
 
-    jobs_graph = job_params.jobgraph
-
     for s in sorted(d.stacks.iterkeys()):
         if whitelist_repos and s not in whitelist_repos:
             continue
@@ -135,12 +126,12 @@ def doit(job_params, dry_maintainers, packages, rosdist_rep,
         if not d.stacks[s].version:
             print('- skipping "%s" since version is null' % s)
             continue
-        results[rd.debianize_package_name(s)] = release_jobs.dry_doit(s, dry_maintainers[s], default_distros, target_arches, fqdn, rosdistro, jobgraph=jobs_graph, commit=commit, jenkins_instance=jenkins_instance, packages_for_sync=packages_for_sync)
+        results[debianize_package_name(rd.name, s)] = release_jobs.dry_doit(s, dry_maintainers[s], default_distros, target_arches, rosdistro, jobgraph=jobs_graph, commit=commit, jenkins_instance=jenkins_instance, packages_for_sync=packages_for_sync)
         #time.sleep(1)
 
     # special metapackages job
     if not whitelist_repos or 'metapackages' in whitelist_repos:
-        results[rd.debianize_package_name('metapackages')] = release_jobs.dry_doit('metapackages', [], default_distros, target_arches, fqdn, rosdistro, jobgraph=jobs_graph, commit=commit, jenkins_instance=jenkins_instance, packages_for_sync=packages_for_sync)
+        results[debianize_package_name(rd.name, 'metapackages')] = release_jobs.dry_doit('metapackages', [], default_distros, target_arches, rosdistro, jobgraph=jobs_graph, commit=commit, jenkins_instance=jenkins_instance, packages_for_sync=packages_for_sync)
 
     if delete_extra_jobs:
         assert(not whitelist_repos)
@@ -164,6 +155,19 @@ def doit(job_params, dry_maintainers, packages, rosdist_rep,
 
     return results
 
+def get_dependencies(rd, packages):
+    dependencies = {}
+    v = rospack.init_rospack_interface()
+    for p in packages:
+        deps = rd.get_depends(p)
+        dp = debianize_package_name(rd.name, p)
+        dependencies[dp] = []
+        combined_deps = set(deps['build']) | set(deps['run'])
+        for d in combined_deps:
+            if not rospack.is_system_dependency(v, d):
+                dependencies[dp].append(debianize_package_name(rd.name, d))
+    return dependencies
+
 
 if __name__ == '__main__':
     args = parse_options()
@@ -172,19 +176,18 @@ if __name__ == '__main__':
 
     print('Loading rosdistro %s' % args.rosdistro)
 
-    rd = Rosdistro(args.rosdistro, args.rosdist_rep)
+    rd = RosDistro(args.rosdistro, rosdist_rep=args.rosdist_rep)
 
     workspace = args.repo_workspace
     if not workspace:
         workspace = os.path.join(tempfile.gettempdir(), 'repo-workspace-%s' % args.rosdistro)
 
     if args.rosdistro != 'fuerte':
-        from buildfarm import dependency_walker
-        packages = dependency_walker.get_packages(workspace, rd, skip_update=args.skip_update)
-        dependencies = dependency_walker.get_jenkins_dependencies(args.rosdistro, packages)
+        packages = rd.get_packages()
+        dependencies = get_dependencies(rd, packages)
     else:
         from buildfarm import dependency_walker_fuerte
-        stacks = dependency_walker_fuerte.get_stacks(workspace, rd._repoinfo, args.rosdistro, skip_update=args.skip_update)
+        stacks = dependency_walker_fuerte.get_stacks(workspace, rd.distro_file.repositories, args.rosdistro, skip_update=args.skip_update)
         dependencies = dependency_walker_fuerte.get_dependencies(args.rosdistro, stacks)
         packages = stacks
 
@@ -203,9 +206,10 @@ if __name__ == '__main__':
     # setup a job triggered by all other debjobs
     combined_jobgraph[debianize_package_name(args.rosdistro, 'metapackages')] = combined_jobgraph.keys()
 
+    targets = get_targets(rd, args.distros, args.arches)
     jp = JobParams(rosdistro=args.rosdistro,
-                   distros=args.distros,
-                   arches=args.arches,
+                   distros=targets.keys(),
+                   arches=targets,
                    fqdn=args.fqdn,
                    jobgraph=combined_jobgraph,
                    rosdist_rep=args.rosdist_rep,
@@ -215,6 +219,7 @@ if __name__ == '__main__':
                        packages=packages,
                        dry_maintainers=dry_maintainers,
                        commit=args.commit,
+                       wet_only=args.wet_only,
                        rosdist_rep=args.rosdist_rep,
                        delete_extra_jobs=args.delete,
                        whitelist_repos=args.repos)

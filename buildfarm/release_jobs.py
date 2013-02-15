@@ -12,10 +12,8 @@ import urllib
 import urllib2
 import yaml
 import datetime
+
 from rospkg.distro import load_distro, distro_uri
-
-from rosdistro import debianize_package_name, Rosdistro
-
 from . import repo, jenkins_support
 
 import jenkins
@@ -53,43 +51,61 @@ class PackageParams(object):
         self.release_uri = release_uri
         self.short_package_name = short_package_name
         self.maintainers = maintainers
-        self.maintainer_emails = [x.email for x in package.maintainers]
+        self.maintainer_emails = [x['email'] for x in maintainers]
 
+
+def get_targets(rd, distros, arches):
+    """
+    Figure out default distros and arches.  Command-line arg is
+    used as a filter on the values read from the rosdistro repo
+    """
+    target_distros = rd.get_targets()
+    if distros:
+        target_distros = [d for d in target_distros if d in distros]
+
+    # build a list of target arches
+    targets = {}
+    for d in target_distros:
+        targets[d] = rd.get_arches(d)
+        if arches:
+            targets[d] = [a for a in targets[d] if a in arches]
+
+    return targets
 
 def expand(config_template, d):
     s = em.expand(config_template, **d)
     return s
 
+def sanitize_package_name(name):
+    return name.replace('_', '-')
 
-def compute_missing(distros, arches, fqdn, rosdistro, sourcedeb_only=False, rosdist_rep=None):
-    """ Compute what packages are missing from a repo based on the rosdistro files, both wet and dry. """
+def debianize_package_name(rosdistro, name):
+    if rosdistro == 'backports':
+        return sanitize_package_name(name)
+    return sanitize_package_name("ros-%s-%s"%(rosdistro, name))
 
-    repo_url = 'http://%s/repos/building' % fqdn
+def compute_missing(job_params, sourcedeb_only=False):
+    """ Compute what wet packages are missing from a repo based on the rosdistro files. """
 
-    rd = Rosdistro(rosdistro, rosdist_rep)
+    repo_url = 'http://%s/repos/building' % job_params.fqdn
+
+    rd = job_params.rd
     # We take the intersection of repo-specific targets with default
     # targets.
 
-    target_distros = rd.get_target_distros()
-    if distros:
-        target_distros = [x for x in target_distros if x in distros]
+    target_distros = job_params.distros
 
     missing = {}
-    for short_package_name in rd.get_package_list():
-        #print ('Analyzing WET stack "%s" for "%s"' % (r['url'], target_distros))
-
-        # todo check if sourcedeb is present with the right version
-        deb_name = debianize_package_name(rosdistro, short_package_name)
-        expected_version = rd.get_version(short_package_name, full_version=True)
+    for short_package_name in rd.get_packages():
+        deb_name = debianize_package_name(job_params.rosdistro, short_package_name)
+        expected_version = rd.get_version(short_package_name)
 
         missing[short_package_name] = []
         for d in target_distros:
             if not repo.deb_in_repo(repo_url, deb_name, str(expected_version) + d, d, arch='na', source=True):
                 missing[short_package_name].append('%s_source' % d)
             if not sourcedeb_only:
-                target_arches = rd.get_target_arches(d)
-                if arches:
-                    target_arches = [x for x in target_arches if x in arches]
+                target_arches = job_params.arches[d]
                 for a in target_arches:
                     if not repo.deb_in_repo(repo_url, deb_name, str(expected_version) + ".*", d, a):
                         missing[short_package_name].append('%s_%s' % (d, a))
@@ -101,9 +117,7 @@ def compute_missing(distros, arches, fqdn, rosdistro, sourcedeb_only=False, rosd
 
         distro_arches = []
         for d in target_distros:
-            target_arches = rd.get_target_arches(d)
-            if arches:
-                target_arches = [x for x in target_arches if x in arches]
+            target_arches = job_params.arches[d]
             for a in target_arches:
                 distro_arches.append((d, a))
 
@@ -317,7 +331,7 @@ def dry_binarydeb_jobs(stackname, dry_maintainers, rosdistro, distros, arches, f
 #     maintainers about it. Quick fix.
 DONT_NOTIFY = [('precise', 'armel'), ('wheezy', 'armhf')]
 
-def binarydeb_jobs(job_params, pkg_params):
+def binarydeb_job(job_params, pkg_params):
 
     jenkins_config = jenkins_support.load_server_config_file(jenkins_support.get_default_catkin_debs_config())
     d = dict(
@@ -330,16 +344,12 @@ def binarydeb_jobs(job_params, pkg_params):
 
     jobs = []
 
-    target_distros = job_params.rd.get_target_distros()
-    if job_params.distros:
-        target_distros = [x for x in target_distros if x in job_params.distros]
+    target_distros = job_params.distros
     for distro in target_distros:
-        target_arches = job_params.rd.get_target_arches(distro)
-        if job_params.arches:
-            target_arches = [x for x in target_arches if x in job_params.arches]
+        target_arches = job_params.arches[distro]
         for arch in target_arches:
             if (distro, arch) in DONT_NOTIFY:
-                d['NOTIFICATION_EMAIL'] = []
+                d['NOTIFICATION_EMAIL'] = ''
             d['ARCH'] = arch
             d['DISTRO'] = distro
             d["CHILD_PROJECTS"] = calc_child_jobs(pkg_params.package_name, distro, arch, job_params.jobgraph)
@@ -397,7 +407,7 @@ def dry_doit(package, dry_maintainers, distros, arches, fqdn, rosdistro, jobgrap
 
 def doit(job_params, pkg_params, commit, jenkins_instance):
 
-    binary_jobs = binarydeb_jobs(job_params, pkg_params)
+    binary_jobs = binarydeb_job(job_params, pkg_params)
     child_projects = zip(*binary_jobs)[0]  # unzip the binary_jobs tuple
     source_job = sourcedeb_job(job_params, pkg_params, child_projects)
     jobs = [source_job] + binary_jobs

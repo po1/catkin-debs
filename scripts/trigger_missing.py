@@ -7,7 +7,9 @@ import jenkins
 import pprint
 
 from buildfarm import jenkins_support, release_jobs
-from buildfarm.rosdistro import debianize_package_name
+from buildfarm.release_jobs import JobParams
+from buildfarm.release_jobs import get_targets, debianize_package_name
+from rosdistro.rosdistro import RosDistro
 
 
 def parse_options():
@@ -75,13 +77,17 @@ def trigger_if_necessary(da, pkg, rosdistro, jenkins_instance, missing_by_arch):
 if __name__ == '__main__':
     args = parse_options()
 
-    missing = release_jobs.compute_missing(
-        args.distros,
-        args.arches,
-        args.fqdn,
-        rosdistro=args.rosdistro,
-        sourcedeb_only=args.sourcedeb_only,
-        rosdist_rep=args.rosdist_rep)
+    rd = RosDistro(args.rosdistro, rosdist_rep=args.rosdist_rep, dont_load_deps=True)
+    targets = get_targets(rd, args.distros, args.arches)
+    jp = JobParams(rosdistro=args.rosdistro,
+                   distros=targets.keys(),
+                   arches=targets,
+                   fqdn=args.fqdn,
+                   jobgraph=None,
+                   rosdist_rep=args.rosdist_rep,
+                   rd_object=rd)
+
+    missing = release_jobs.compute_missing(jp, sourcedeb_only=args.sourcedeb_only)
 
     print('')
     print('Missing packages:')

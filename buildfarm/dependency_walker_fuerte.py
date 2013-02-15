@@ -55,10 +55,10 @@ def get_stacks(workspace, repository_dict, rosdistro, skip_update=False):
     errors = []
     for name, r in sorted(repository_dict.items()):
         url = r.url
-        if r.full_version is None:
+        if r.version is None:
             print("Ignoring '%s' from '%s' since version is None." % (name, url))
             continue
-        version_number = 'release/%s/%s' % (name, r.full_version)
+        version_number = 'release/%s/%s' % (name, r.version)
         print("Get '%s' from '%s' from tag '%s'" % (name, url, version_number))
         # try getting the release branch
         stack = None
