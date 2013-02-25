@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
 
     report_failure = False
-    for d in rd.get_distros():
+    for d in rd.get_targets():
 
         tag = verify_debian_tag(repo_path, args.package_name, package_version, d)
         if not tag:
