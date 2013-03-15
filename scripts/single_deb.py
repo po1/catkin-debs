@@ -53,7 +53,7 @@ from rosdeb import debianize_name, debianize_version, rosdistro, targets, list_m
 from rosdeb.rosutil import send_email
 from rosdeb.source_deb import download_control
 
-NAME = 'build_debs.py' 
+NAME = 'build_debs.py'
 TARBALL_URL = "https://code.ros.org/svn/release/download/stacks/%(stack_name)s/%(base_name)s/%(f_name)s"
 
 REPO_PATH ='/var/www/repos/building'
@@ -87,10 +87,10 @@ class InternalBuildFailure(Exception):
     def __str__(self):
         return self._message
 
-    
+
 def download_files(stack_name, stack_version, staging_dir, files):
     import urllib
-    
+
     base_name = "%s-%s"%(stack_name, stack_version)
 
     dl_files = []
@@ -141,7 +141,7 @@ def compute_deps(distro, stack_name):
                 add_stack(s)
             except BuildFailure as e:
                 print "WARNING: Failed loading stack [%s] removing from ALL.  Error:\n%s"%(s, e)
-                
+
     else:
         add_stack(stack_name)
 
@@ -166,7 +166,7 @@ def create_chroot(distro, distro_name, os_platform, arch, repo_fqdn):
 
     # force update of apt index
     subprocess.check_call(['sudo', 'apt-get', 'update'], stderr=subprocess.STDOUT)
-    
+
     # Things that this build infrastructure depends on
     basedeps = ['wget', 'lsb-release', 'debhelper']
     # Deps we claimed to have needed for building ROS
@@ -187,8 +187,8 @@ def create_chroot(distro, distro_name, os_platform, arch, repo_fqdn):
     deplist = ' '.join(basedeps+rosdeps)
 
     debootstrap_type = 'debootstrap' # use default
-    mirror = 'http://aptproxy.willowgarage.com/archive.ubuntu.com/ubuntu' # use wg mirror
-    updates_mirror = "deb http://aptproxy.willowgarage.com/us.archive.ubuntu.com/ubuntu/ %s-updates main restricted universe multiverse"%(os_platform)
+    mirror = 'http://archive.ubuntu.com/ubuntu'
+    updates_mirror = "deb http://us.archive.ubuntu.com/ubuntu/ %s-updates main restricted universe multiverse"%(os_platform)
     if arch == 'armel' or arch == 'armhf':
         debootstrap_type = 'qemu-debootstrap'
         mirror = 'http://ports.ubuntu.com/ubuntu-ports/'
@@ -341,7 +341,7 @@ apt-get install %(deb_name)s=%(deb_version_final)s -y --force-yes
 dpkg -l %(deb_name)s
 """%locals())
         os.chmod(verify_script, stat.S_IRWXU)
-            
+
 
 
     debug("starting verify script for %s-%s"%(stack_name, stack_version))
@@ -356,7 +356,7 @@ dpkg -l %(deb_name)s
 
 
     if not noupload:
-        
+
         invalidate_debs(deb_name, os_platform, arch, repo_fqdn)
 
         if not upload_debs(files, distro_name, os_platform, arch, repo_fqdn):
@@ -432,7 +432,7 @@ post_upload_command     = ssh %(repo_username)s@%(repo_hostname)s -- /usr/bin/re
 #        return 1
 #    else:
 #        return 0
-            
+
             # The cache is no longer valid, we clear it so that we won't skip debs that have been invalidated
             # ??? What was this doing?
             #rosdeb.repo._Packages_cache = {}
@@ -481,8 +481,8 @@ rm %(new_files)s
 
 def debug(msg):
     print "[build_debs]: %s"%(msg)
-    
-    
+
+
 def build_debs(distro, stack_name, os_platform, arch, staging_dir, force, noupload, interactive, repo_fqdn):
     distro_name = distro.release_name
 
@@ -495,7 +495,7 @@ def build_debs(distro, stack_name, os_platform, arch, staging_dir, force, nouplo
     except KeyError, ex:
         debug("Stack [%s] is not in in the distro: %s" % (stack_name, ex) )
 
-    
+
     broken = set()
     skipped = set()
 
@@ -629,7 +629,7 @@ def gen_metapkgs(distro, os_platform, arch, staging_dir, repo_fqdn, force=False)
 
     missing_ok = missing_excluded.union(missing_excluded_dep)
 
-    
+
     # if (metapkg missing) or (metapkg missing deps), then create
     # modify create to version-lock deps
 
@@ -716,7 +716,7 @@ def single_deb_main():
 
     if len(args) != 4:
         parser.error('invalid args')
-        
+
     (distro_name, stack_name, os_platform, arch) = args
     distro = failure_message = warning_message = None
 
@@ -771,12 +771,12 @@ def single_deb_main():
                 if  'contact' in control and distro_name != 'diamondback':
                     to_addr = control['contact']
                     subject = 'debian build [%s-%s-%s-%s] failed'%(distro_name, stack_name, os_platform, arch)
-                    # DISABLE SENDING OF EMAIL from script. This can be done better by jenkins. 
+                    # DISABLE SENDING OF EMAIL from script. This can be done better by jenkins.
                     # send_email(options.smtp, EMAIL_FROM_ADDR, to_addr, subject, failure_message)
         sys.exit(1)
-            
 
-    
+
+
 if __name__ == '__main__':
     single_deb_main()
 
